@@ -28,22 +28,71 @@ function App() {
     let matchId = 1;
     const rounds = format === 'double' ? 2 : 1;
     
-    for (let round = 0; round < rounds; round++) {
-      for (let i = 0; i < teams.length; i++) {
-        for (let j = i + 1; j < teams.length; j++) {
+    for (let cycle = 0; cycle < rounds; cycle++) {
+      // Generate balanced round-robin schedule
+      const numTeams = teams.length;
+      const isEven = numTeams % 2 === 0;
+      const totalRounds = isEven ? numTeams - 1 : numTeams;
+      
+      // Create a fixed position for one team (if even number of teams)
+      const teamsForRotation = isEven ? teams.slice(1) : [...teams];
+      const fixedTeam = isEven ? teams[0] : null;
+      
+      for (let round = 0; round < totalRounds; round++) {
+        const roundMatches = [];
+        
+        if (isEven) {
+          // Pair fixed team with rotating team
+          const rotatingIndex = round % teamsForRotation.length;
+          roundMatches.push({
+            home: fixedTeam,
+            away: teamsForRotation[rotatingIndex]
+          });
+          
+          // Pair remaining teams
+          for (let i = 1; i < teamsForRotation.length / 2; i++) {
+            const homeIndex = (round + i) % teamsForRotation.length;
+            const awayIndex = (round - i + teamsForRotation.length) % teamsForRotation.length;
+            
+            roundMatches.push({
+              home: teamsForRotation[homeIndex],
+              away: teamsForRotation[awayIndex]
+            });
+          }
+        } else {
+          // For odd number of teams, one team sits out each round
+          const sittingOutIndex = round % numTeams;
+          const playingTeams = teams.filter((_, index) => index !== sittingOutIndex);
+          
+          for (let i = 0; i < playingTeams.length / 2; i++) {
+            const homeIndex = (round + i) % playingTeams.length;
+            const awayIndex = (round - i - 1 + playingTeams.length) % playingTeams.length;
+            
+            if (homeIndex !== awayIndex) {
+              roundMatches.push({
+                home: playingTeams[homeIndex],
+                away: playingTeams[awayIndex]
+              });
+            }
+          }
+        }
+        
+        // Add matches to the main list
+        roundMatches.forEach(({ home, away }) => {
           matches.push({
             id: matchId++,
-            round: round + 1,
-            homeTeam: teams[i],
-            awayTeam: teams[j],
+            round: round + 1 + (cycle * totalRounds),
+            homeTeam: home,
+            awayTeam: away,
             homeScore: null,
             awayScore: null,
             status: 'pending',
             date: null
           });
-        }
+        });
       }
     }
+    
     return matches;
   };
 
