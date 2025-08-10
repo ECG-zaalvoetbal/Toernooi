@@ -4,63 +4,84 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "./components/ui/toaster";
 import TournamentSetup from "./components/TournamentSetup";
 import Dashboard from "./components/Dashboard";
-import mockTournaments from "./mock/mockTournaments";
+import TournamentList from "./components/TournamentList";
 
 function App() {
   const [currentTournament, setCurrentTournament] = useState(null);
-  const [tournaments, setTournaments] = useState(mockTournaments);
+  const [tournaments, setTournaments] = useState([]);
+  const [currentView, setCurrentView] = useState('list'); // 'list', 'setup', 'dashboard'
+
+  useEffect(() => {
+    // Load tournaments from localStorage on app start
+    const savedTournaments = localStorage.getItem('tournaments');
+    if (savedTournaments) {
+      setTournaments(JSON.parse(savedTournaments));
+    }
+  }, []);
+
+  useEffect(() => {
+    // Save tournaments to localStorage whenever tournaments change
+    localStorage.setItem('tournaments', JSON.stringify(tournaments));
+  }, [tournaments]);
 
   const handleTournamentCreate = (tournament) => {
     const newTournament = {
       ...tournament,
       id: Date.now().toString(),
       createdAt: new Date().toISOString(),
-      matches: generateMatches(tournament.teams, tournament.format),
+      matches: generateMatches(tournament.teams, tournament.format, tournament.shuffleRounds),
       standings: generateInitialStandings(tournament.teams)
     };
     
     setTournaments(prev => [...prev, newTournament]);
     setCurrentTournament(newTournament);
+    setCurrentView('dashboard');
   };
 
-  const generateMatches = (teams, format) => {
+  const shuffleArray = (array) => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  };
+
+  const generateMatches = (teams, format, shuffleRounds = false) => {
     const matches = [];
     let matchId = 1;
     const rounds = format === 'double' ? 2 : 1;
     
     for (let cycle = 0; cycle < rounds; cycle++) {
-      // Generate balanced round-robin schedule
       const numTeams = teams.length;
       const isEven = numTeams % 2 === 0;
       const totalRounds = isEven ? numTeams - 1 : numTeams;
       
-      // Create a fixed position for one team (if even number of teams)
       const teamsForRotation = isEven ? teams.slice(1) : [...teams];
       const fixedTeam = isEven ? teams[0] : null;
       
+      let roundMatches = [];
+      
       for (let round = 0; round < totalRounds; round++) {
-        const roundMatches = [];
+        const currentRoundMatches = [];
         
         if (isEven) {
-          // Pair fixed team with rotating team
           const rotatingIndex = round % teamsForRotation.length;
-          roundMatches.push({
+          currentRoundMatches.push({
             home: fixedTeam,
             away: teamsForRotation[rotatingIndex]
           });
           
-          // Pair remaining teams
           for (let i = 1; i < teamsForRotation.length / 2; i++) {
             const homeIndex = (round + i) % teamsForRotation.length;
             const awayIndex = (round - i + teamsForRotation.length) % teamsForRotation.length;
             
-            roundMatches.push({
+            currentRoundMatches.push({
               home: teamsForRotation[homeIndex],
               away: teamsForRotation[awayIndex]
             });
           }
         } else {
-          // For odd number of teams, one team sits out each round
           const sittingOutIndex = round % numTeams;
           const playingTeams = teams.filter((_, index) => index !== sittingOutIndex);
           
@@ -69,7 +90,7 @@ function App() {
             const awayIndex = (round - i - 1 + playingTeams.length) % playingTeams.length;
             
             if (homeIndex !== awayIndex) {
-              roundMatches.push({
+              currentRoundMatches.push({
                 home: playingTeams[homeIndex],
                 away: playingTeams[awayIndex]
               });
@@ -77,11 +98,26 @@ function App() {
           }
         }
         
-        // Add matches to the main list
-        roundMatches.forEach(({ home, away }) => {
+        roundMatches.push({
+          round: round + 1 + (cycle * totalRounds),
+          matches: currentRoundMatches
+        });
+      }
+      
+      // Shuffle rounds if requested
+      if (shuffleRounds) {
+        roundMatches = shuffleArray(roundMatches).map((roundData, index) => ({
+          ...roundData,
+          round: index + 1 + (cycle * totalRounds)
+        }));
+      }
+      
+      // Add matches to the main list
+      roundMatches.forEach(({ round, matches: currentRoundMatches }) => {
+        currentRoundMatches.forEach(({ home, away }) => {
           matches.push({
             id: matchId++,
-            round: round + 1 + (cycle * totalRounds),
+            round: round,
             homeTeam: home,
             awayTeam: away,
             homeScore: null,
@@ -90,7 +126,7 @@ function App() {
             date: null
           });
         });
-      }
+      });
     }
     
     return matches;
@@ -111,21 +147,19 @@ function App() {
   };
 
   const updateMatchScore = (matchId, homeScore, awayScore) => {
-    setCurrentTournament(prev => {
-      const updatedMatches = prev.matches.map(match => 
+    const updatedTournament = {
+      ...currentTournament,
+      matches: currentTournament.matches.map(match => 
         match.id === matchId 
           ? { ...match, homeScore, awayScore, status: 'completed' }
           : match
-      );
-      
-      const updatedStandings = calculateStandings(updatedMatches, prev.teams);
-      
-      return {
-        ...prev,
-        matches: updatedMatches,
-        standings: updatedStandings
-      };
-    });
+      )
+    };
+    
+    updatedTournament.standings = calculateStandings(updatedTournament.matches, updatedTournament.teams);
+    
+    setCurrentTournament(updatedTournament);
+    setTournaments(prev => prev.map(t => t.id === updatedTournament.id ? updatedTournament : t));
   };
 
   const calculateStandings = (matches, teams) => {
@@ -181,24 +215,82 @@ function App() {
     });
   };
 
+  const handleTournamentSelect = (tournament) => {
+    setCurrentTournament(tournament);
+    setCurrentView('dashboard');
+  };
+
+  const handleTournamentEdit = (tournament) => {
+    setCurrentTournament(tournament);
+    setCurrentView('setup');
+  };
+
+  const handleTournamentDelete = (tournamentId) => {
+    setTournaments(prev => prev.filter(t => t.id !== tournamentId));
+    if (currentTournament && currentTournament.id === tournamentId) {
+      setCurrentTournament(null);
+      setCurrentView('list');
+    }
+  };
+
+  const handleTournamentUpdate = (updatedTournament) => {
+    const tournament = {
+      ...updatedTournament,
+      id: currentTournament.id,
+      createdAt: currentTournament.createdAt,
+      matches: generateMatches(updatedTournament.teams, updatedTournament.format, updatedTournament.shuffleRounds),
+      standings: generateInitialStandings(updatedTournament.teams)
+    };
+    
+    setTournaments(prev => prev.map(t => t.id === tournament.id ? tournament : t));
+    setCurrentTournament(tournament);
+    setCurrentView('dashboard');
+  };
+
+  const renderCurrentView = () => {
+    switch (currentView) {
+      case 'setup':
+        return (
+          <TournamentSetup 
+            onTournamentCreate={currentTournament ? handleTournamentUpdate : handleTournamentCreate}
+            onBack={() => setCurrentView('list')}
+            editingTournament={currentTournament}
+          />
+        );
+      case 'dashboard':
+        return (
+          <Dashboard 
+            tournament={currentTournament}
+            onUpdateScore={updateMatchScore}
+            onBackToList={() => {
+              setCurrentTournament(null);
+              setCurrentView('list');
+            }}
+            onEditTournament={() => setCurrentView('setup')}
+          />
+        );
+      case 'list':
+      default:
+        return (
+          <TournamentList 
+            tournaments={tournaments}
+            onTournamentSelect={handleTournamentSelect}
+            onTournamentEdit={handleTournamentEdit}
+            onTournamentDelete={handleTournamentDelete}
+            onCreateNew={() => {
+              setCurrentTournament(null);
+              setCurrentView('setup');
+            }}
+          />
+        );
+    }
+  };
+
   return (
     <div className="App min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       <BrowserRouter>
         <Routes>
-          <Route 
-            path="/" 
-            element={
-              currentTournament ? (
-                <Dashboard 
-                  tournament={currentTournament}
-                  onUpdateScore={updateMatchScore}
-                  onBackToSetup={() => setCurrentTournament(null)}
-                />
-              ) : (
-                <TournamentSetup onTournamentCreate={handleTournamentCreate} />
-              )
-            } 
-          />
+          <Route path="/" element={renderCurrentView()} />
         </Routes>
       </BrowserRouter>
       <Toaster />

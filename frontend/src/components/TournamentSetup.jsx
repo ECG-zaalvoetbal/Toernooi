@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Badge } from './ui/badge';
-import { Trophy, Users, Settings, Play } from 'lucide-react';
+import { Switch } from './ui/switch';
+import { Trophy, Users, Settings, Play, ArrowLeft, Shuffle } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 
 const DEFAULT_TEAMS = [
@@ -17,17 +18,38 @@ const DEFAULT_TEAMS = [
   { name: 'Team 6', color: '#f59e0b' }
 ];
 
-const TournamentSetup = ({ onTournamentCreate }) => {
+const TournamentSetup = ({ onTournamentCreate, onBack, editingTournament }) => {
   const [tournamentName, setTournamentName] = useState('');
   const [numTeams, setNumTeams] = useState(4);
   const [format, setFormat] = useState('single');
   const [teams, setTeams] = useState(DEFAULT_TEAMS.slice(0, 4));
+  const [shuffleRounds, setShuffleRounds] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (editingTournament) {
+      setTournamentName(editingTournament.name);
+      setNumTeams(editingTournament.teams.length);
+      setFormat(editingTournament.format);
+      setTeams(editingTournament.teams);
+    }
+  }, [editingTournament]);
 
   const handleNumTeamsChange = (value) => {
     const num = parseInt(value);
     setNumTeams(num);
-    setTeams(DEFAULT_TEAMS.slice(0, num));
+    if (editingTournament) {
+      // Keep existing teams if editing, add default ones if needed
+      const currentTeams = [...teams];
+      if (num > currentTeams.length) {
+        const additionalTeams = DEFAULT_TEAMS.slice(currentTeams.length, num);
+        setTeams([...currentTeams, ...additionalTeams]);
+      } else {
+        setTeams(currentTeams.slice(0, num));
+      }
+    } else {
+      setTeams(DEFAULT_TEAMS.slice(0, num));
+    }
   };
 
   const handleTeamNameChange = (index, newName) => {
@@ -64,12 +86,13 @@ const TournamentSetup = ({ onTournamentCreate }) => {
       name: tournamentName,
       teams,
       format,
-      numTeams
+      numTeams,
+      shuffleRounds
     });
 
     toast({
-      title: "Tournament created!",
-      description: `${tournamentName} is ready to start.`,
+      title: editingTournament ? "Tournament updated!" : "Tournament created!",
+      description: `${tournamentName} is ${editingTournament ? 'updated' : 'ready to start'}.`,
     });
   };
 
@@ -78,11 +101,28 @@ const TournamentSetup = ({ onTournamentCreate }) => {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 text-white rounded-full mb-4">
-            <Trophy className="w-8 h-8" />
+          <div className="flex items-center justify-center gap-4 mb-4">
+            {onBack && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={onBack}
+                className="text-gray-600 hover:text-gray-900"
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+            )}
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 text-white rounded-full">
+              <Trophy className="w-8 h-8" />
+            </div>
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Tournament Manager</h1>
-          <p className="text-gray-600">Create and manage your soccer tournament</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-2">
+            {editingTournament ? 'Edit Tournament' : 'Tournament Manager'}
+          </h1>
+          <p className="text-gray-600">
+            {editingTournament ? 'Update your tournament settings' : 'Create and manage your soccer tournament'}
+          </p>
         </div>
 
         {/* Main Setup Card */}
@@ -152,6 +192,25 @@ const TournamentSetup = ({ onTournamentCreate }) => {
               </p>
             </div>
 
+            {/* Shuffle Rounds Option */}
+            <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center gap-3">
+                <Shuffle className="w-5 h-5 text-blue-600" />
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">
+                    Shuffle Rounds
+                  </Label>
+                  <p className="text-xs text-gray-500">
+                    Randomize the order of rounds for more variety
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={shuffleRounds}
+                onCheckedChange={setShuffleRounds}
+              />
+            </div>
+
             {/* Team Configuration */}
             <div className="space-y-4">
               <div className="flex items-center gap-2">
@@ -181,7 +240,7 @@ const TournamentSetup = ({ onTournamentCreate }) => {
             {/* Tournament Summary */}
             <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
               <h3 className="font-semibold text-blue-900 mb-2">Tournament Summary</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
                 <div>
                   <span className="text-gray-600">Teams:</span>
                   <Badge variant="secondary" className="ml-2">{numTeams}</Badge>
@@ -195,6 +254,18 @@ const TournamentSetup = ({ onTournamentCreate }) => {
                     }
                   </Badge>
                 </div>
+                <div>
+                  <span className="text-gray-600">Format:</span>
+                  <Badge variant="secondary" className="ml-2">
+                    {format === 'double' ? 'Double RR' : 'Single RR'}
+                  </Badge>
+                </div>
+                <div>
+                  <span className="text-gray-600">Shuffle:</span>
+                  <Badge variant={shuffleRounds ? "default" : "secondary"} className="ml-2">
+                    {shuffleRounds ? 'Yes' : 'No'}
+                  </Badge>
+                </div>
               </div>
             </div>
 
@@ -205,7 +276,7 @@ const TournamentSetup = ({ onTournamentCreate }) => {
               size="lg"
             >
               <Play className="w-5 h-5 mr-2" />
-              Create Tournament
+              {editingTournament ? 'Update Tournament' : 'Create Tournament'}
             </Button>
           </CardContent>
         </Card>
